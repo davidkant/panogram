@@ -153,13 +153,13 @@ public:
         addAndMakeVisible (&thumbnailComp);
         addAndMakeVisible (&positionOverlay);
         
-        setSize (500, 400);
+        setSize (500, 230);
         
         formatManager.registerBasicFormats();
         transportSource.addChangeListener (this);
         
         setAudioChannels (2, 2);
-         startTimer (20);
+        startTimer (20);
     }
     
     ~MainContentComponent()
@@ -170,17 +170,38 @@ public:
     void prepareToPlay (int samplesPerBlockExpected, double sampleRate) override
     {
         transportSource.prepareToPlay (samplesPerBlockExpected, sampleRate);
+        String message;
+        message << "Preparing to play audio..." << newLine;
+        message << " samplesPerBlockExpected = " << samplesPerBlockExpected << newLine;
+        message << " sampleRate = " << sampleRate;
+        Logger::getCurrentLogger()->writeToLog (message);
     }
     
     void getNextAudioBlock (const AudioSourceChannelInfo& bufferToFill) override
     {
+        // if no audio source clear buffer and return
         if (readerSource == nullptr)
         {
             bufferToFill.clearActiveBufferRegion();
             return;
         }
         
-        transportSource.getNextAudioBlock (bufferToFill);
+        // create and fill temp buffer with 4-channel audio
+        tempBuffer.setSize (4, bufferToFill.buffer->getNumSamples());
+        AudioSourceChannelInfo tempBufferInfo (&tempBuffer, 0, bufferToFill.numSamples);
+        transportSource.getNextAudioBlock (tempBufferInfo);
+
+        // copy channels 3 and 4 to output buffer for now...
+        bufferToFill.buffer->copyFrom (0, bufferToFill.startSample, tempBuffer, 2, 0, bufferToFill.numSamples);
+        bufferToFill.buffer->copyFrom (1, bufferToFill.startSample, tempBuffer, 3, 0, bufferToFill.numSamples);
+        
+        // fill output buffer
+        // transportSource.getNextAudioBlock (bufferToFill);
+        
+        // debug me
+        // String message;
+        // message << "slalalalalalal = " << bufferToFill.buffer->getNumChannels() << newLine;
+        // Logger::getCurrentLogger()->writeToLog (message);
     }
     
     void releaseResources() override
@@ -199,6 +220,14 @@ public:
         const Rectangle<int> thumbnailBounds (10, 40, getWidth() - 20, getHeight() - 50);
         thumbnailComp.setBounds (thumbnailBounds);
         positionOverlay.setBounds (thumbnailBounds);
+        
+        // position multiple thumbnail views
+        // const int thumbnailHeight = (getHeight() - 50)/4;
+        // thumbnailComp.setBounds (10, 40, getWidth() - 20, thumbnailHeight);
+        // thumbnailComp2.setBounds (10, 40 + thumbnailHeight * 1, getWidth() - 20, thumbnailHeight);
+        // thumbnailComp3.setBounds (10, 40 + thumbnailHeight * 2, getWidth() - 20, thumbnailHeight);
+        // thumbnailComp4.setBounds (10, 40 + thumbnailHeight * 3, getWidth() - 20, thumbnailHeight);
+        // positionOverlay.setBounds (10, 40, getWidth() - 20, thumbnailHeight*4);
     }
     
     void changeListenerCallback (ChangeBroadcaster* source) override
@@ -295,21 +324,25 @@ private:
     
     void openButtonClicked()
     {
-        FileChooser chooser ("Select a Wave file to play...",
-                             File::nonexistent,
-                             "*.wav");
         
-        if (chooser.browseForFileToOpen())
-        {
-            File file (chooser.getResult());
-            
-            if (AudioFormatReader* reader = formatManager.createReaderFor (file))
+        for (int i=0; i<1; i++) {
+        
+            FileChooser chooser ("Select a Wave file to play...",
+                                 File::nonexistent,
+                                 "*.wav");
+        
+            if (chooser.browseForFileToOpen())
             {
-                ScopedPointer<AudioFormatReaderSource> newSource = new AudioFormatReaderSource (reader, true);
-                transportSource.setSource (newSource, 0, nullptr, reader->sampleRate);
-                playButton.setEnabled (true);
-                thumbnailComp.setFile (file);
-                readerSource = newSource.release();
+                File file (chooser.getResult());
+            
+                if (AudioFormatReader* reader = formatManager.createReaderFor (file))
+                {
+                    ScopedPointer<AudioFormatReaderSource> newSource = new AudioFormatReaderSource (reader, true);
+                    transportSource.setSource (newSource, 0, nullptr, reader->sampleRate, 4);
+                    playButton.setEnabled (true);
+                    thumbnailComp.setFile (file);
+                    readerSource = newSource.release();
+                }
             }
         }
     }
@@ -344,6 +377,7 @@ private:
     AudioThumbnailCache thumbnailCache;
     SimpleThumbnailComponent thumbnailComp;
     SimplePositionOverlay positionOverlay;
+    AudioSampleBuffer tempBuffer;
     
     LookAndFeel_V3 lookAndFeel;
     
