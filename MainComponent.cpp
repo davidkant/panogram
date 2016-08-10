@@ -151,13 +151,40 @@ class SimpleSpectrogram : public Component,
 private Timer
 {
 public:
-    SimpleSpectrogram (float fftDataToUse, float fftSizeToUse)
-    : fftSize (fftSizeToUse)
+    SimpleSpectrogram (float* fftDataToUse, float fftSizeToUse)
+    : fftData(fftDataToUse),
+    fftSize (fftSizeToUse),
+    spectrogramImage (Image::RGB, 512, 512, true)
     {
-        fftData = fftDataToUse;
         startTimer (40);
     }
     
+    void paint (Graphics& g) override
+    {
+        const int rightHandEdge = spectrogramImage.getWidth() - 1;
+        const int imageHeight = spectrogramImage.getHeight();
+        
+        // first, shuffle our image leftwards by 1 pixel
+        spectrogramImage.moveImageSection (0, 0, 1, 0, rightHandEdge, imageHeight);
+
+        // find the range of values produced
+        // Range<float> maxLevel = FloatVectorOperations::findMinAndMax (fftData, fftSize / 2);
+        
+        // fill image
+        for (int y = 1; y < imageHeight; ++y)
+        {
+            const float skewedProportionY = 1.0f - std::exp (std::log (y / (float) imageHeight) * 0.2f);
+            const int fftDataIndex = jlimit (0, fftSize / 2, (int) (skewedProportionY * fftSize / 2));
+            // const float level = jmap (fftCalcBuffer[fftDataIndex], 0.0f, maxLevel.getEnd(), 0.0f, 1.0f);
+            const float level = fftData[fftDataIndex] / 50.0;
+            
+            spectrogramImage.setPixelAt (rightHandEdge, y, Colour::fromHSV (level, 1.0f, level, 1.0f));
+        }
+        
+        // draw image
+        g.drawImageWithin (spectrogramImage, 0, 0, getWidth(), getHeight(), RectanglePlacement::stretchToFit);
+    }
+/*
     void paint (Graphics& g) override
     {
         g.fillAll (Colours::black);
@@ -172,8 +199,8 @@ public:
         for (int x = 0; x < getWidth(); x++)
         {
             // const int fftIndex = int((float(x) / getWidth()) * (fftSize/2));
-//            const float level = fftData[x] / 1.0;
-//            const float level = jmap (fftData[fftIndex], 0.0f, maxLevel.getEnd(), 0.0f, 1.0f);
+            // const float level = fftData[x] / 1.0;
+            // const float level = jmap (fftData[fftIndex], 0.0f, maxLevel.getEnd(), 0.0f, 1.0f);
             // spectrumPath.lineTo(x, int(level*getHeight()));
             // spectrumPath.lineTo(x, 20);
         }
@@ -184,6 +211,7 @@ public:
         g.setColour(Colours::red);
         g.strokePath(spectrumPath, PathStrokeType(1.5));
     }
+ */
     
 private:
     void timerCallback() override
@@ -191,8 +219,9 @@ private:
         repaint();
     }
     
-    float fftData;
-    float fftSize;
+    float* fftData;
+    int fftSize;
+    Image spectrogramImage;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SimpleSpectrogram)
 };
@@ -211,10 +240,10 @@ public:
     thumbnailCache (5),
     thumbnailComp (512, formatManager, thumbnailCache),
     positionOverlay (transportSource),
-    // spectrogramComp(fftCookedData, fftSize),
+    spectrogramComp(fftCookedData, fftSize),
     forwardFFT (fftOrder, false),
-    nextFFTBlockReady (false),
-    spectrogramImage (Image::RGB, 512, 512, true)
+    nextFFTBlockReady (false)
+    // spectrogramImage (Image::RGB, 512, 512, true)
     {
         setLookAndFeel (&lookAndFeel);
         
@@ -243,7 +272,7 @@ public:
         
         addAndMakeVisible (&thumbnailComp);
         addAndMakeVisible (&positionOverlay);
-        // addAndMakeVisible (&spectrogramComp);
+        addAndMakeVisible (&spectrogramComp);
         
         setSize (500, 450);
         
@@ -289,9 +318,11 @@ public:
         // copy audio from input stream
         // ringBuffer.addToFifo(bufferToFill.buffer->getReadPointer(0), bufferToFill.numSamples);
         
-        // if enough perform FFT
+        // if enough data in ring buffer to perform FFT
         if (ringBuffer.abstractFifo.getNumReady () >= fftSize)
         {
+
+/*
             if (! nextFFTBlockReady)
             {
                 // copy from ring buffer to FFT buffer
@@ -300,12 +331,15 @@ public:
                 // set ready-to-compute flag
                 nextFFTBlockReady = true;
             }
-
+*/
+            // copy from ring buffer to FFT buffer
+            ringBuffer.readFromFifo (fftCalcBuffer, fftSize);
+                
             // perform forward FFT
-            // forwardFFT.performFrequencyOnlyForwardTransform (fftCalcBuffer);
+            forwardFFT.performFrequencyOnlyForwardTransform (fftCalcBuffer);
             
             // copy computed data to shared FFT buffer
-            // memcpy(fftCookedData, fftCalcBuffer, fftSize);
+            memcpy(fftCookedData, fftCalcBuffer, fftSize * sizeof(float));
         }
     
         // copy channels 3 and 4 to output buffer
@@ -313,6 +347,7 @@ public:
         bufferToFill.buffer->copyFrom (1, bufferToFill.startSample, tempBuffer, 3, 0, bufferToFill.numSamples);
     }
     
+/*    
     void drawNextLineOfSpectrogram()
     {
         const int rightHandEdge = spectrogramImage.getWidth() - 1;
@@ -337,6 +372,7 @@ public:
             spectrogramImage.setPixelAt (rightHandEdge, y, Colour::fromHSV (level, 1.0f, level, 1.0f));
         }
     }
+*/
     
     void releaseResources() override
     {
@@ -355,8 +391,8 @@ public:
         thumbnailComp.setBounds (thumbnailBounds);
         positionOverlay.setBounds (thumbnailBounds);
         
-        // const Rectangle<int> spectrogramBounds (10, 40+160+20, getWidth() - 20, 100);
-        // spectrogramComp.setBounds (spectrogramBounds);
+        const Rectangle<int> spectrogramBounds (10, 40+160+20, getWidth() - 20, 100);
+        spectrogramComp.setBounds (spectrogramBounds);
         
         // position multiple thumbnail views
         // const int thumbnailHeight = (getHeight() - 50)/4;
@@ -366,11 +402,13 @@ public:
         // thumbnailComp4.setBounds (10, 40 + thumbnailHeight * 3, getWidth() - 20, thumbnailHeight);
         // positionOverlay.setBounds (10, 40, getWidth() - 20, thumbnailHeight*4);
     }
-    
+
+/*
     void paint (Graphics& g) override
     {
         g.drawImageWithin (spectrogramImage, 10, 40+160+20, getWidth()-20, 100, RectanglePlacement::stretchToFit);
     }
+*/
     
     void changeListenerCallback (ChangeBroadcaster* source) override
     {
@@ -404,13 +442,16 @@ public:
         {
             currentPositionLabel.setText ("--:--:---", dontSendNotification);
         }
-        
+       
+/*
         if (nextFFTBlockReady)
         {
             drawNextLineOfSpectrogram();
             nextFFTBlockReady = false;
             repaint();
         }
+ */
+        
     }
     
     void updateLoopState (bool shouldLoop)
@@ -532,7 +573,7 @@ private:
     AudioThumbnailCache thumbnailCache;
     SimpleThumbnailComponent thumbnailComp;
     SimplePositionOverlay positionOverlay;
-    // SimpleSpectrogram spectrogramComp;
+    SimpleSpectrogram spectrogramComp;
     
     AudioSampleBuffer tempBuffer;
     RingFifo ringBuffer;
@@ -541,8 +582,7 @@ private:
     FFT forwardFFT;
     bool nextFFTBlockReady;
     
-    
-    Image spectrogramImage;
+    // Image spectrogramImage;
     
     LookAndFeel_V3 lookAndFeel;
     
