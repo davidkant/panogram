@@ -144,47 +144,94 @@ public:
 private:
     float myBuffer[2048];
 };
-
 //------------------------------------------------------------------------------
 
-class SimpleFreqSpectrum : public Component,
+/* this displays tick marks and other freq spectrum plot stuff */
+
+class SimpleFreqSpectrumBackground : public Component,
 private Timer
 {
 public:
-    SimpleFreqSpectrum (float* fftDataToUse, float fftSizeToUse)
-    : fftData(fftDataToUse),
-    fftSize (fftSizeToUse),
-    spectrogramImage (Image::RGB, 512, 512, true)
+    SimpleFreqSpectrumBackground ()
     {
         startTimer (40);
     }
     
     void paint (Graphics& g) override
     {
-        // black background
         g.fillAll (Colours::black);
+    }
+    
+private:
+    void timerCallback() override
+    {
+        repaint();
+    }
+    
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SimpleFreqSpectrumBackground)
+};
+
+//------------------------------------------------------------------------------
+
+/* a very simple frequency spectrum plot */
+
+class SimpleFreqSpectrum : public Component,
+private Timer
+{
+public:
+    SimpleFreqSpectrum (float* fftDataToUse, float fftSizeToUse, Colour spectrumColourToUse)
+    : fftData (fftDataToUse),
+    fftSize (fftSizeToUse),
+    spectrumColour (spectrumColourToUse)
+    {
+        startTimerHz (60);
+    }
+    
+    void paint (Graphics& g) override
+    {
+        // create graphics from image
+        // Graphics g (spectrogramImage);
+        
+        // fade previous image
+        // spectrogramImage.multiplyAllAlphas(0.5);
+        
+        // black background
+        // g.fillAll (Colours::black);
 
         // create path
         Path spectrumPath;
         spectrumPath.clear();
-        spectrumPath.startNewSubPath(0, getHeight());
+        spectrumPath.startNewSubPath (0, getHeight());
      
         // fill path
         for (int x = 0; x < getWidth(); x++)
         {
-            const int fftDataIndex = int((float(x) / getWidth()) * (fftSize/2));
-            const float level = fftData[fftDataIndex] / 60.0;
-            spectrumPath.lineTo(x, (1 - level) * getHeight());
+            // log freq scale
+            const float skewedProportionY = 1.0f - std::exp (std::log (x / (float) getWidth()) * 0.3f);
+            const int fftDataIndex = jlimit (0, fftSize / 2, (int) (skewedProportionY * fftSize / 2));
+            
+            // lin freq scale
+            // const int fftDataIndex = int((float(x) / getWidth()) * (fftSize/2));
+            
+            // level
+            const float level = fftData[fftDataIndex] / 10.0;
+            
+            // add path
+            spectrumPath.lineTo(getWidth() - x, (1 - level) * getHeight());
         }
      
         // close path
         spectrumPath.closeSubPath();
      
         // render path
-        g.setColour(Colours::red);
-        g.strokePath(spectrumPath, PathStrokeType(1.5));
-        g.setOpacity(0.666);
-        g.fillPath(spectrumPath);
+        g.setColour (spectrumColour);
+        g.setOpacity (0.666);
+        g.strokePath (spectrumPath, PathStrokeType(1.5));
+        g.setOpacity (0.333);
+        g.fillPath (spectrumPath);
+        
+        // draw image
+        // gi.drawImageWithin (spectrogramImage, 0, 0, getWidth(), getHeight(), RectanglePlacement::stretchToFit);
     }
     
 private:
@@ -195,12 +242,14 @@ private:
     
     float* fftData;
     int fftSize;
-    Image spectrogramImage;
+    Colour spectrumColour;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SimpleFreqSpectrum)
 };
 
 //------------------------------------------------------------------------------
+
+/* a very simple spectrogram plot */
 
 class SimpleSpectrogram : public Component,
 private Timer
@@ -267,7 +316,11 @@ public:
     thumbnailCache (5),
     thumbnailComp (512, formatManager, thumbnailCache),
     positionOverlay (transportSource),
-    freqSpectrumComp(fftCookedData, fftSize),
+    freqSpectrumComp1(fftCookedData1, fftSize, Colours::magenta),
+    freqSpectrumComp2(fftCookedData2, fftSize, Colours::cyan),
+    freqSpectrumComp3(fftCookedData3, fftSize, Colours::yellow),
+    freqSpectrumComp4(fftCookedData4, fftSize, Colours::grey),
+    freqSpectrumBackground(),
     forwardFFT (fftOrder, false),
     nextFFTBlockReady (false)
     {
@@ -298,9 +351,13 @@ public:
         
         addAndMakeVisible (&thumbnailComp);
         addAndMakeVisible (&positionOverlay);
-        addAndMakeVisible (&freqSpectrumComp);
+        addAndMakeVisible (&freqSpectrumBackground);
+        addAndMakeVisible (&freqSpectrumComp1);
+        addAndMakeVisible (&freqSpectrumComp2);
+        addAndMakeVisible (&freqSpectrumComp3);
+        addAndMakeVisible (&freqSpectrumComp4);
         
-        setSize (500, 450);
+        setSize (500, 420);
         
         formatManager.registerBasicFormats();
         transportSource.addChangeListener (this);
@@ -339,22 +396,34 @@ public:
         transportSource.getNextAudioBlock (tempBufferInfo);
         
         // copy from temp ch 0 to ring buffer
-        ringBuffer.addToFifo (tempBufferInfo.buffer->getReadPointer(0), bufferToFill.numSamples);
+        ringBuffer1.addToFifo (tempBufferInfo.buffer->getReadPointer(0), bufferToFill.numSamples);
+        ringBuffer2.addToFifo (tempBufferInfo.buffer->getReadPointer(1), bufferToFill.numSamples);
+        ringBuffer3.addToFifo (tempBufferInfo.buffer->getReadPointer(2), bufferToFill.numSamples);
+        ringBuffer4.addToFifo (tempBufferInfo.buffer->getReadPointer(3), bufferToFill.numSamples);
         
         // copy audio from input stream
         // ringBuffer.addToFifo(bufferToFill.buffer->getReadPointer(0), bufferToFill.numSamples);
         
         // if enough data in ring buffer to perform FFT
-        if (ringBuffer.abstractFifo.getNumReady () >= fftSize)
+        if (ringBuffer1.abstractFifo.getNumReady () >= fftSize)
         {
             // copy from ring buffer to FFT buffer
-            ringBuffer.readFromFifo (fftCalcBuffer, fftSize);
-                
+            ringBuffer1.readFromFifo (fftCalcBuffer1, fftSize);
+            ringBuffer2.readFromFifo (fftCalcBuffer2, fftSize);
+            ringBuffer3.readFromFifo (fftCalcBuffer3, fftSize);
+            ringBuffer4.readFromFifo (fftCalcBuffer4, fftSize);
+
             // perform forward FFT
-            forwardFFT.performFrequencyOnlyForwardTransform (fftCalcBuffer);
+            forwardFFT.performFrequencyOnlyForwardTransform (fftCalcBuffer1);
+            forwardFFT.performFrequencyOnlyForwardTransform (fftCalcBuffer2);
+            forwardFFT.performFrequencyOnlyForwardTransform (fftCalcBuffer3);
+            forwardFFT.performFrequencyOnlyForwardTransform (fftCalcBuffer4);
             
             // copy computed data to shared FFT buffer
-            memcpy(fftCookedData, fftCalcBuffer, fftSize * sizeof(float));
+            memcpy(fftCookedData1, fftCalcBuffer1, fftSize * sizeof(float));
+            memcpy(fftCookedData2, fftCalcBuffer2, fftSize * sizeof(float));
+            memcpy(fftCookedData3, fftCalcBuffer3, fftSize * sizeof(float));
+            memcpy(fftCookedData4, fftCalcBuffer4, fftSize * sizeof(float));
         }
     
         // copy channels 3 and 4 to output buffer
@@ -379,8 +448,12 @@ public:
         thumbnailComp.setBounds (thumbnailBounds);
         positionOverlay.setBounds (thumbnailBounds);
         
-        const Rectangle<int> spectrogramBounds (10, 40+160+20, getWidth() - 20, 100);
-        freqSpectrumComp.setBounds (spectrogramBounds);
+        const Rectangle<int> spectrogramBounds (10, 40+160+20, getWidth() - 20, getHeight() - 230);
+        freqSpectrumBackground.setBounds (spectrogramBounds);
+        freqSpectrumComp1.setBounds (spectrogramBounds);
+        freqSpectrumComp2.setBounds (spectrogramBounds);
+        freqSpectrumComp3.setBounds (spectrogramBounds);
+        freqSpectrumComp4.setBounds (spectrogramBounds);
         
         // position multiple thumbnail views
         // const int thumbnailHeight = (getHeight() - 50)/4;
@@ -544,12 +617,27 @@ private:
     AudioThumbnailCache thumbnailCache;
     SimpleThumbnailComponent thumbnailComp;
     SimplePositionOverlay positionOverlay;
-    SimpleFreqSpectrum freqSpectrumComp;
+
+    SimpleFreqSpectrum freqSpectrumComp1;
+    SimpleFreqSpectrum freqSpectrumComp2;
+    SimpleFreqSpectrum freqSpectrumComp3;
+    SimpleFreqSpectrum freqSpectrumComp4;
+    SimpleFreqSpectrumBackground freqSpectrumBackground;
     
     AudioSampleBuffer tempBuffer;
-    RingFifo ringBuffer;
-    float fftCalcBuffer [2 * fftSize];
-    float fftCookedData [fftSize];
+    
+    RingFifo ringBuffer1;
+    RingFifo ringBuffer2;
+    RingFifo ringBuffer3;
+    RingFifo ringBuffer4;
+    float fftCalcBuffer1 [2 * fftSize];
+    float fftCalcBuffer2 [2 * fftSize];
+    float fftCalcBuffer3 [2 * fftSize];
+    float fftCalcBuffer4 [2 * fftSize];
+    float fftCookedData1 [fftSize];
+    float fftCookedData2 [fftSize];
+    float fftCookedData3 [fftSize];
+    float fftCookedData4 [fftSize];
     FFT forwardFFT;
     bool nextFFTBlockReady;
 
