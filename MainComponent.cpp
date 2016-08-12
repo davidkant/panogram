@@ -2,6 +2,7 @@
 #define MAINCOMPONENT_H_INCLUDED
 
 #include "../JuceLibraryCode/JuceHeader.h"
+#include <Accelerate/Accelerate.h>
 
 class SimpleThumbnailComponent : public Component,
 private ChangeListener
@@ -189,6 +190,14 @@ public:
     
     void paint (Graphics& g) override
     {
+
+        // db scale
+        Float32 kZeroReference = 1.0;
+        Float32 offset = 1.001;
+        memcpy(fftDataCooked, fftData, sizeof(float) * fftSize/2);
+        vDSP_vsadd(fftDataCooked, 1, &offset, fftDataCooked, 1, fftSize/2);
+        vDSP_vdbcon(fftDataCooked, 1, &kZeroReference, fftDataCooked, 1, fftSize/2, 1);
+
         // create graphics from image
         // Graphics g (spectrogramImage);
         
@@ -197,12 +206,15 @@ public:
         
         // black background
         // g.fillAll (Colours::black);
+        
+        // find the range of values produced
+        // Range<float> maxLevel = FloatVectorOperations::findMinAndMax (fftData, fftSize / 2);
 
         // create path
         Path spectrumPath;
         spectrumPath.clear();
         spectrumPath.startNewSubPath (0, getHeight());
-     
+        
         // fill path
         for (int x = 0; x < getWidth(); x++)
         {
@@ -214,7 +226,8 @@ public:
             // const int fftDataIndex = int((float(x) / getWidth()) * (fftSize/2));
             
             // level
-            const float level = fftData[fftDataIndex] / 10.0;
+            const float level = fftDataCooked[fftDataIndex] / 30.0;
+            // const float level = jmap (fftData[fftDataIndex], 0.0f, maxLevel.getEnd(), 0.0f, 1.0f);
             
             // add path
             spectrumPath.lineTo(getWidth() - x, (1 - level) * getHeight());
@@ -241,6 +254,7 @@ private:
     }
     
     float* fftData;
+    float fftDataCooked[512]; // HARDCODE:
     int fftSize;
     Colour spectrumColour;
     
@@ -304,6 +318,116 @@ private:
 
 //------------------------------------------------------------------------------
 
+/* quad pan crossover ogram */
+
+class QuadPanogramComp : public Component,
+private Timer
+{
+public:
+    QuadPanogramComp (float* fftDataToUse1, float* fftDataToUse2, float* fftDataToUse3, float* fftDataToUse4, float fftSizeToUse)
+    : fftData1(fftDataToUse1),
+    fftData2(fftDataToUse2),
+    fftData3(fftDataToUse3),
+    fftData4(fftDataToUse4),
+    fftSize (fftSizeToUse),
+    panogramImage (Image::RGB, 512, 512, true)
+    {
+        // todo: initialize image to zeros
+
+        startTimer (40);
+    }
+    
+    void paint (Graphics& g) override
+    {
+        // compute crossover, gains
+        computeCrossoverGains(fftData1, fftData2, gainDataX1, xoverDataX1);
+        computeCrossoverGains(fftData3, fftData4, gainDataX2, xoverDataX2);
+        computeCrossoverGains(fftData1, fftData3, gainDataY1, xoverDataY1);
+        computeCrossoverGains(fftData2, fftData4, gainDataY2, xoverDataY2);
+        
+        // dbscale gains
+        Float32 kZeroReference = 1.0;
+        Float32 offset = 1.001;
+        vDSP_vsadd(gainDataX1, 1, &offset, gainDataX1, 1, fftSize/2);
+        vDSP_vdbcon(gainDataX1, 1, &kZeroReference, gainDataX1, 1, fftSize/2, 1);
+        vDSP_vsadd(gainDataX2, 1, &offset, gainDataX2, 1, fftSize/2);
+        vDSP_vdbcon(gainDataX2, 1, &kZeroReference, gainDataX2, 1, fftSize/2, 1);
+
+        
+        // fade image
+        panogramImage.multiplyAllAlphas(0.9);
+        
+        // fill image
+        for (int i = 0; i < 512; i++)
+        {
+            int xPix, yPix;
+            xPix = xoverDataX1[i] * panogramImage.getWidth();
+            if (xoverDataX1[i] < 0.5)
+                yPix = xoverDataY1[i] * panogramImage.getHeight();
+            else
+                yPix = xoverDataY2[i] * panogramImage.getHeight();
+            
+            panogramImage.setPixelAt (xPix, yPix, Colour::fromHSV ((float)i/(fftSize/2.0f), 1.0f, 1.0f, gainDataX1[i]/0.5));
+        }
+        
+        // fill image
+        for (int i = 0; i < 512; i++)
+        {
+            int xPix, yPix;
+            xPix = xoverDataX2[i] * panogramImage.getWidth();
+            if (xoverDataX2[i] < 0.5)
+                yPix = xoverDataY1[i] * panogramImage.getHeight();
+            else
+                yPix = xoverDataY2[i] * panogramImage.getHeight();
+            
+            panogramImage.setPixelAt (xPix, yPix, Colour::fromHSV ((float)i/(fftSize/2.0f), 1.0f, 1.0f, gainDataX2[i]/0.5));
+        }
+        
+        // blackout
+        g.fillAll(Colours::black);
+        // draw image
+        g.drawImageWithin (panogramImage, 0, 0, getWidth(), getHeight(), RectanglePlacement::stretchToFit);
+    }
+    
+    void computeCrossoverGains(float* fftDataL, float* fftDataR, float* gainData, float* xoverData)
+    {
+        // gain = l + r
+        vDSP_vadd(fftDataL, 1, fftDataR, 1, gainData, 1, fftSize/2);
+
+        // xover = r / gain
+        vDSP_vdiv(gainData, 1, fftDataR, 1, xoverData, 1, fftSize/2);
+        
+        // convert gain to Db
+        // Float32 kZeroReference = 1.0;
+        // vDSP_vdbcon(GainData, 1, &kZeroReference, GainDataDb, 1, mBins, 1);
+    }
+    
+private:
+    void timerCallback() override
+    {
+        repaint();
+    }
+    
+    float* fftData1;
+    float* fftData2;
+    float* fftData3;
+    float* fftData4;
+    float gainDataX1[512]; // HARDCODE: n1024/2 = 512 bins
+    float xoverDataX1[512]; // HARDCODE: n1024/2 = 512 bins
+    float gainDataX2[512]; // HARDCODE: n1024/2 = 512 bins
+    float xoverDataX2[512]; // HARDCODE: n1024/2 = 512 bins
+    float gainDataY1[512]; // HARDCODE: n1024/2 = 512 bins
+    float xoverDataY1[512]; // HARDCODE: n1024/2 = 512 bins
+    float gainDataY2[512]; // HARDCODE: n1024/2 = 512 bins
+    float xoverDataY2[512]; // HARDCODE: n1024/2 = 512 bins
+    int fftSize;
+    Image panogramImage;
+    
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (QuadPanogramComp)
+};
+
+//------------------------------------------------------------------------------
+
 class MainContentComponent   : public AudioAppComponent,
 public ChangeListener,
 public Button::Listener,
@@ -321,6 +445,7 @@ public:
     freqSpectrumComp3(fftCookedData3, fftSize, Colours::yellow),
     freqSpectrumComp4(fftCookedData4, fftSize, Colours::grey),
     freqSpectrumBackground(),
+    quadPanogram(fftCookedData1, fftCookedData2, fftCookedData3, fftCookedData4, fftSize),
     forwardFFT (fftOrder, false),
     nextFFTBlockReady (false)
     {
@@ -356,8 +481,9 @@ public:
         addAndMakeVisible (&freqSpectrumComp2);
         addAndMakeVisible (&freqSpectrumComp3);
         addAndMakeVisible (&freqSpectrumComp4);
+        addAndMakeVisible (&quadPanogram);
         
-        setSize (500, 420);
+        setSize (400, 600);
         
         formatManager.registerBasicFormats();
         transportSource.addChangeListener (this);
@@ -448,12 +574,16 @@ public:
         thumbnailComp.setBounds (thumbnailBounds);
         positionOverlay.setBounds (thumbnailBounds);
         
-        const Rectangle<int> spectrogramBounds (10, 40+160+20, getWidth() - 20, getHeight() - 230);
+        // const Rectangle<int> spectrogramBounds (10, 40+160+20, getWidth() - 20, getHeight() - 230);
+        const Rectangle<int> spectrogramBounds (10, 40+160+20, getWidth() - 20, 200);
         freqSpectrumBackground.setBounds (spectrogramBounds);
         freqSpectrumComp1.setBounds (spectrogramBounds);
         freqSpectrumComp2.setBounds (spectrogramBounds);
         freqSpectrumComp3.setBounds (spectrogramBounds);
         freqSpectrumComp4.setBounds (spectrogramBounds);
+        
+        const Rectangle<int> quadPanogramBounds (10, 40+160+20+205, getWidth() - 20, getWidth() - 30);
+        quadPanogram.setBounds (quadPanogramBounds);
         
         // position multiple thumbnail views
         // const int thumbnailHeight = (getHeight() - 50)/4;
@@ -623,6 +753,7 @@ private:
     SimpleFreqSpectrum freqSpectrumComp3;
     SimpleFreqSpectrum freqSpectrumComp4;
     SimpleFreqSpectrumBackground freqSpectrumBackground;
+    QuadPanogramComp quadPanogram;
     
     AudioSampleBuffer tempBuffer;
     

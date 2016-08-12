@@ -6,10 +6,16 @@
     It contains the basic startup code for a Juce application.
  
  todo:
- -> db scale? need to know for location calculation
+ -> FFT windowing
+ -> newFFTData flag so don't redraw old data
+ -> dynamic memory management
+ -> JUCE cross-platform equivalents for accelerate?
+ -> numBins so not fft/2 all the time
+ -> variable fft size will break lots of initializations
+ -> brightness alpha needs to be 8bit
  
  notes:
- 
+ -> is JUCE fft already a db scale? don't think so.
  * tried drawing frequency spectrogram to image and fading it but
    - have to use high res images for nice lines
    - slowed down drawing
