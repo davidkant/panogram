@@ -11,5 +11,5 @@ Don't trust anything you see here; this is not the correct way to code anything!
  
 __- dk, 2016__
 
-#####__#madewithJUCE__
-#####__#envirosoundlab__
+####__#madewithJUCE__
+####__#envirosoundlab__
