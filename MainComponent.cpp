@@ -193,23 +193,11 @@ public:
 
         // db scale
         Float32 kZeroReference = 1.0;
-        Float32 offset = 1.001;
+        Float32 offset = 1.0000000001;
         memcpy(fftDataCooked, fftData, sizeof(float) * fftSize/2);
         vDSP_vsadd(fftDataCooked, 1, &offset, fftDataCooked, 1, fftSize/2);
         vDSP_vdbcon(fftDataCooked, 1, &kZeroReference, fftDataCooked, 1, fftSize/2, 1);
-
-        // create graphics from image
-        // Graphics g (spectrogramImage);
         
-        // fade previous image
-        // spectrogramImage.multiplyAllAlphas(0.5);
-        
-        // black background
-        // g.fillAll (Colours::black);
-        
-        // find the range of values produced
-        // Range<float> maxLevel = FloatVectorOperations::findMinAndMax (fftData, fftSize / 2);
-
         // create path
         Path spectrumPath;
         spectrumPath.clear();
@@ -226,8 +214,7 @@ public:
             // const int fftDataIndex = int((float(x) / getWidth()) * (fftSize/2));
             
             // level
-            const float level = fftDataCooked[fftDataIndex] / 30.0;
-            // const float level = jmap (fftData[fftDataIndex], 0.0f, maxLevel.getEnd(), 0.0f, 1.0f);
+            const float level = fftDataCooked[fftDataIndex] / 30.0; // todo: arbitrary gain data scalar should visual display be a knob
             
             // add path
             spectrumPath.lineTo(getWidth() - x, (1 - level) * getHeight());
@@ -242,9 +229,6 @@ public:
         g.strokePath (spectrumPath, PathStrokeType(1.5));
         g.setOpacity (0.333);
         g.fillPath (spectrumPath);
-        
-        // draw image
-        // gi.drawImageWithin (spectrogramImage, 0, 0, getWidth(), getHeight(), RectanglePlacement::stretchToFit);
     }
     
 private:
@@ -347,13 +331,12 @@ public:
         
         // dbscale gains
         Float32 kZeroReference = 1.0;
-        Float32 offset = 1.001;
+        Float32 offset = 1.0000000001;
         vDSP_vsadd(gainDataX1, 1, &offset, gainDataX1, 1, fftSize/2);
         vDSP_vdbcon(gainDataX1, 1, &kZeroReference, gainDataX1, 1, fftSize/2, 1);
         vDSP_vsadd(gainDataX2, 1, &offset, gainDataX2, 1, fftSize/2);
         vDSP_vdbcon(gainDataX2, 1, &kZeroReference, gainDataX2, 1, fftSize/2, 1);
 
-        
         // fade image
         panogramImage.multiplyAllAlphas(0.9);
         
@@ -361,30 +344,35 @@ public:
         for (int i = 0; i < 512; i++)
         {
             int xPix, yPix;
+            
             xPix = xoverDataX1[i] * panogramImage.getWidth();
+            
             if (xoverDataX1[i] < 0.5)
                 yPix = xoverDataY1[i] * panogramImage.getHeight();
             else
                 yPix = xoverDataY2[i] * panogramImage.getHeight();
             
-            panogramImage.setPixelAt (xPix, yPix, Colour::fromHSV ((float)i/(fftSize/2.0f), 1.0f, 1.0f, gainDataX1[i]/0.5));
+            panogramImage.setPixelAt (xPix, yPix, Colour::fromHSV ((float)i/(fftSize/2.0f), 1.0f, 1.0f, gainDataX1[i]/0.5)); // todo: arbitrary gain data scalar should visual display be a knob
         }
         
         // fill image
         for (int i = 0; i < 512; i++)
         {
             int xPix, yPix;
+            
             xPix = xoverDataX2[i] * panogramImage.getWidth();
+            
             if (xoverDataX2[i] < 0.5)
                 yPix = xoverDataY1[i] * panogramImage.getHeight();
             else
                 yPix = xoverDataY2[i] * panogramImage.getHeight();
             
-            panogramImage.setPixelAt (xPix, yPix, Colour::fromHSV ((float)i/(fftSize/2.0f), 1.0f, 1.0f, gainDataX2[i]/0.5));
+            panogramImage.setPixelAt (xPix, yPix, Colour::fromHSV ((float)i/(fftSize/2.0f), 1.0f, 1.0f, gainDataX2[i]/0.5)); // todo: arbitrary gain data scalar should visual display be a knob
         }
         
         // blackout
         g.fillAll(Colours::black);
+        
         // draw image
         g.drawImageWithin (panogramImage, 0, 0, getWidth(), getHeight(), RectanglePlacement::stretchToFit);
     }
@@ -396,10 +384,6 @@ public:
 
         // xover = r / gain
         vDSP_vdiv(gainData, 1, fftDataR, 1, xoverData, 1, fftSize/2);
-        
-        // convert gain to Db
-        // Float32 kZeroReference = 1.0;
-        // vDSP_vdbcon(GainData, 1, &kZeroReference, GainDataDb, 1, mBins, 1);
     }
     
 private:
@@ -412,14 +396,14 @@ private:
     float* fftData2;
     float* fftData3;
     float* fftData4;
-    float gainDataX1[512]; // HARDCODE: n1024/2 = 512 bins
-    float xoverDataX1[512]; // HARDCODE: n1024/2 = 512 bins
-    float gainDataX2[512]; // HARDCODE: n1024/2 = 512 bins
-    float xoverDataX2[512]; // HARDCODE: n1024/2 = 512 bins
-    float gainDataY1[512]; // HARDCODE: n1024/2 = 512 bins
-    float xoverDataY1[512]; // HARDCODE: n1024/2 = 512 bins
-    float gainDataY2[512]; // HARDCODE: n1024/2 = 512 bins
-    float xoverDataY2[512]; // HARDCODE: n1024/2 = 512 bins
+    float gainDataX1[512];
+    float xoverDataX1[512];
+    float gainDataX2[512];
+    float xoverDataX2[512];
+    float gainDataY1[512];
+    float xoverDataY1[512];
+    float gainDataY2[512];
+    float xoverDataY2[512];
     int fftSize;
     Image panogramImage;
     
@@ -483,10 +467,15 @@ public:
         addAndMakeVisible (&freqSpectrumComp4);
         addAndMakeVisible (&quadPanogram);
         
-        setSize (400, 600);
+        setSize (400, 720);
         
         formatManager.registerBasicFormats();
         transportSource.addChangeListener (this);
+        
+        // init fftWindow
+        fftWindowScale = 0.5; // changes for hop != fft
+        vDSP_hann_window(fftWindow, fftSize, vDSP_HANN_DENORM);
+        vDSP_vsmul(fftWindow, 1, &fftWindowScale, fftWindow, 1, fftSize);
         
         setAudioChannels (2, 2);
         startTimer (20);
@@ -538,6 +527,12 @@ public:
             ringBuffer2.readFromFifo (fftCalcBuffer2, fftSize);
             ringBuffer3.readFromFifo (fftCalcBuffer3, fftSize);
             ringBuffer4.readFromFifo (fftCalcBuffer4, fftSize);
+            
+            // window
+            vDSP_vmul(fftCalcBuffer1, 1, fftWindow, 1, fftCalcBuffer1, 1, fftSize);
+            vDSP_vmul(fftCalcBuffer2, 1, fftWindow, 1, fftCalcBuffer2, 1, fftSize);
+            vDSP_vmul(fftCalcBuffer3, 1, fftWindow, 1, fftCalcBuffer3, 1, fftSize);
+            vDSP_vmul(fftCalcBuffer4, 1, fftWindow, 1, fftCalcBuffer4, 1, fftSize);
 
             // perform forward FFT
             forwardFFT.performFrequencyOnlyForwardTransform (fftCalcBuffer1);
@@ -575,14 +570,14 @@ public:
         positionOverlay.setBounds (thumbnailBounds);
         
         // const Rectangle<int> spectrogramBounds (10, 40+160+20, getWidth() - 20, getHeight() - 230);
-        const Rectangle<int> spectrogramBounds (10, 40+160+20, getWidth() - 20, 200);
+        const Rectangle<int> spectrogramBounds (10, 40+160+6, getWidth() - 20, 120);
         freqSpectrumBackground.setBounds (spectrogramBounds);
         freqSpectrumComp1.setBounds (spectrogramBounds);
         freqSpectrumComp2.setBounds (spectrogramBounds);
         freqSpectrumComp3.setBounds (spectrogramBounds);
         freqSpectrumComp4.setBounds (spectrogramBounds);
         
-        const Rectangle<int> quadPanogramBounds (10, 40+160+20+205, getWidth() - 20, getWidth() - 30);
+        const Rectangle<int> quadPanogramBounds (10, 40+160+6+120+5, getWidth() - 20, getWidth() - 20);
         quadPanogram.setBounds (quadPanogramBounds);
         
         // position multiple thumbnail views
@@ -757,6 +752,9 @@ private:
     
     AudioSampleBuffer tempBuffer;
     
+    // FFT stuff
+    float fftWindow [fftSize];
+    float fftWindowScale;
     RingFifo ringBuffer1;
     RingFifo ringBuffer2;
     RingFifo ringBuffer3;
