@@ -11,5 +11,7 @@ Don't trust anything you see here; this is not the correct way to code anything!
  
 __- dk, 2016__
 
+###ps -- you must must must load a 4-channel .wav file for now... otherwise crsshhhhh
+
 ####__#madewithJUCE__
 ####__#envirosoundlab__
