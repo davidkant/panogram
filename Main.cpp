@@ -80,8 +80,8 @@ public:
     class MainWindow    : public DocumentWindow
     {
     public:
-        MainWindow()  : DocumentWindow ("Fuck Shit Up",
-                                        Colours::lightgrey,
+        MainWindow()  : DocumentWindow ("FERP Localizer",
+                                        Colours::black,
                                         DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
