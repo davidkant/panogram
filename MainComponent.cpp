@@ -214,7 +214,7 @@ public:
     void resized() override
     {
         // main display region
-        const Rectangle<int> panogramBounds  (10, 10, getWidth() - 20, getWidth() - 20);
+        const Rectangle<int> panogramBounds  (5, 5, getWidth()-10, getWidth()-10);
 
         // overlap two panograms in main region
         panogram1.setBounds (panogramBounds);
@@ -359,11 +359,12 @@ public:
     
     void resized() override
     {
-        const Rectangle<int> multiPanogramCompBounds (10, 10, getWidth() - 20, getWidth() - 20);
+        // get dimensions from width and center with 10 pix padding to edge
+        const Rectangle<int> multiPanogramCompBounds ((getWidth()-getHeight())/2+10, 10, getHeight()-20, getHeight()-20);
         dualPanogramComp.setBounds (multiPanogramCompBounds);
         
-        // Rectangle<int> r (getLocalBounds().reduced (4));
-        // audioSetupComp->setBounds (r.removeFromTop (proportionOfHeight (0.65f)));
+        //Rectangle<int> r (getLocalBounds().reduced (4));
+        //audioSetupComp->setBounds (r.removeFromTop (proportionOfHeight (0.65f)));
     }
 
     //=======================================================================
@@ -376,9 +377,9 @@ public:
 
     void paint (Graphics& g) override
     {
-        // border rectangle
-        g.setColour(Colours::white);
-        g.drawRect(1, 1, getWidth()-2, getHeight()-2);
+        // white border rectangle
+        // g.setColour(Colours::white);
+        // g.drawRect(1, 1, getWidth()-2, getHeight()-2);
     }
     
 private:
